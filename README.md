@@ -1,4 +1,5 @@
 # YUME Count
+こちらで公開してます→ https://yuka0055yuka-max.github.io/YUME-Count/
 
 幻想的なUIで投票・選考を可視化するPWA式カウンターアプリ  
 最大30人まで対応、リアルタイム棒グラフ表示、エクスポート/インポート機能付き
