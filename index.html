@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>投票カウンターUI（TXTエクスポート機能付き）</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background-color: #f4f4f9; color: #333; }
+    h1 { color: #444; }
+    .date { font-size: 0.9em; color: gray; margin-bottom: 10px; }
+    .candidate { margin: 8px 0; display: flex; align-items: center; }
+    .name-input { padding: 5px; border: 1px solid #ccc; border-radius: 4px; flex-grow: 1; margin-right: 10px;}
+    .vote-btn, .reset-btn { margin: 0 2px; padding: 5px 10px; border: none; color: white; border-radius: 4px; cursor: pointer; }
+    .vote-btn { background-color: #007bff; }
+    .vote-btn:hover { background-color: #0056b3; }
+    .reset-btn { background-color: #dc3545; }
+    .reset-btn:hover { background-color: #c82333; }
+    #controls { margin-top: 20px; }
+    #resetAll, #exportCSV, #exportTXT, #importCSVLabel { margin-right: 10px; padding: 8px 15px; border-radius: 5px; border: none; color: white; cursor: pointer; }
+    #resetAll { background-color: #6c757d; }
+    #exportCSV { background-color: #28a745; }
+    #exportTXT { background-color: #fd7e14; } /* Style for new button */
+    #importCSVLabel { background-color: #17a2b8; display: inline-block; }
+    #importCSV { display: none; }
+    #chart-container { margin-top: 20px; padding: 10px; background: white; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+    canvas { max-width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="date" id="dateDisplay"></div>
+  <h1>投票カウンター 🗳️</h1>
+
+  <label for="chartType">グラフの種類を選択：</label>
+  <select id="chartType" onchange="updateChartType(this.value)">
+    <option value="bar">棒グラフ</option>
+    <option value="pie">円グラフ</option>
+    <option value="doughnut">ドーナツグラフ</option>
+  </select>
+
+  <div id="candidateList"></div>
+
+  <div id="controls">
+    <button id="resetAll" onclick="resetAll()">全体リセット</button>
+    <button id="exportCSV" onclick="exportCSV()">CSVエクスポート</button>
+    <button id="exportTXT" onclick="exportTXT()">TXTエクスポート</button>
+    <label for="importCSV" id="importCSVLabel">CSVインポート</label>
+    <input type="file" id="importCSV" accept=".csv" onchange="importCSV(this.files[0])">
+  </div>
+
+  <div id="chart-container">
+    <canvas id="voteChart" width="800" height="400"></canvas>
+  </div>
+
+  <script>
+    // Load data from localStorage or use defaults
+    let candidateNames = JSON.parse(localStorage.getItem('candidateNames')) || Array.from({ length: 30 }, (_, i) => `候補者${i + 1}`);
+    let voteCounts = JSON.parse(localStorage.getItem('voteCounts')) || Array(30).fill(0);
+    let tapCounts = JSON.parse(localStorage.getItem('tapCounts')) || Array(30).fill(0);
+
+    function generateColors(count) {
+      const colors = [];
+      for (let i = 0; i < count; i++) {
+        const hue = Math.round((360 / count) * i);
+        colors.push(`hsl(${hue}, 70%, 60%)`);
+      }
+      return colors;
+    }
+    const colors = generateColors(30);
+
+    function updateDate() {
+      const now = new Date();
+      const options = { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit' };
+      document.getElementById('dateDisplay').textContent = now.toLocaleDateString('ja-JP', options);
+    }
+
+    // Initial setup
+    updateDate();
+    setInterval(updateDate, 60000); // Update time every minute
+
+    const candidateList = document.getElementById('candidateList');
+    candidateNames.forEach((name, index) => {
+      const div = document.createElement('div');
+      div.className = 'candidate';
+      div.innerHTML = `
+        <input class="name-input" type="text" value="${name}" onchange="updateName(${index}, this.value)" placeholder="候補者名">
+        <span id="count-${index}" style="min-width: 180px;">投票数: ${voteCounts[index]}（${tapCounts[index]}人がタップ）</span>
+        <button class="vote-btn" onclick="vote(${index})">+1</button>
+        <button class="vote-btn" onclick="unvote(${index})">-1</button>
+        <button class="reset-btn" onclick="resetCandidate(${index})">リセット</button>
+      `;
+      candidateList.appendChild(div);
+    });
+
+    const ctx = document.getElementById('voteChart').getContext('2d');
+    let chart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: candidateNames,
+        datasets: [{
+          label: '投票数',
+          data: voteCounts,
+          backgroundColor: colors
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: { beginAtZero: true }
+        }
+      }
+    });
+
+    function saveData() {
+      localStorage.setItem('candidateNames', JSON.stringify(candidateNames));
+      localStorage.setItem('voteCounts', JSON.stringify(voteCounts));
+      localStorage.setItem('tapCounts', JSON.stringify(tapCounts));
+    }
+
+    function updateDisplay(index) {
+      document.getElementById(`count-${index}`).textContent =
+        `投票数: ${voteCounts[index]}（${tapCounts[index]}人がタップ）`;
+    }
+
+    function updateChart() {
+      chart.data.labels = candidateNames;
+      chart.data.datasets[0].data = voteCounts;
+      chart.update();
+    }
+
+    function vote(index) {
+      voteCounts[index]++;
+      tapCounts[index]++;
+      updateDisplay(index);
+      updateChart();
+      saveData();
+    }
+
+    function unvote(index) {
+      if (voteCounts[index] > 0) {
+        voteCounts[index]--;
+      }
+      updateDisplay(index);
+      updateChart();
+      saveData();
+    }
+
+    function resetCandidate(index) {
+      voteCounts[index] = 0;
+      tapCounts[index] = 0;
+      updateDisplay(index);
+      updateChart();
+      saveData();
+    }
+    
+    function updateName(index, newName) {
+      candidateNames[index] = newName;
+      updateChart();
+      saveData();
+    }
+
+    function updateChartType(type) {
+      chart.destroy();
+      chart = new Chart(ctx, {
+        type: type,
+        data: {
+          labels: candidateNames,
+          datasets: [{
+            label: '投票数',
+            data: voteCounts,
+            backgroundColor: colors
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: type !== 'bar' }
+          }
+        }
+      });
+    }
+
+    function resetAll() {
+        if (!confirm('本当にすべてのデータをリセットしますか？')) return;
+        
+        candidateNames = Array.from({ length: 30 }, (_, i) => `候補者${i + 1}`);
+        const nameInputs = document.querySelectorAll('.name-input');
+
+        for (let i = 0; i < 30; i++) {
+            voteCounts[i] = 0;
+            tapCounts[i] = 0;
+            nameInputs[i].value = candidateNames[i];
+            updateDisplay(i);
+        }
+        updateChart();
+        saveData();
+    }
+
+    function exportCSV() {
+      let csvContent = "候補者名,投票数,タップ数\n";
+      candidateNames.forEach((name, index) => {
+        const escapedName = `"${name.replace(/"/g, '""')}"`;
+        csvContent += `${escapedName},${voteCounts[index]},${tapCounts[index]}\n`;
+      });
+
+      const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
+      const blob = new Blob([bom, csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "vote_data.csv";
+      
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // --- New Function to Export as .txt ---
+    function exportTXT() {
+      let txtContent = `投票結果レポート\n`;
+      txtContent += `作成日時: ${new Date().toLocaleString('ja-JP')}\n`;
+      txtContent += `====================\n\n`;
+
+      candidateNames.forEach((name, index) => {
+        txtContent += `■ 候補者名: ${name}\n`;
+        txtContent += `   投票数: ${voteCounts[index]}\n`;
+        txtContent += `   タップ数: ${tapCounts[index]}\n`;
+        txtContent += `--------------------\n`;
+      });
+
+      const blob = new Blob([txtContent], { type: 'text/plain;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "vote_data.txt";
+      
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function importCSV(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      
+      reader.onload = function(e) {
+        const lines = e.target.result.split(/\r?\n/).slice(1);
+
+        lines.forEach((line, index) => {
+          if (index >= 30 || line.trim() === '') return;
+
+          const parts = line.split(",");
+          if (parts.length >= 3) {
+            const name = parts[0].replace(/^"|"$/g, '');
+            const votes = parseInt(parts[1], 10);
+            const taps = parseInt(parts[2], 10);
+
+            candidateNames[index] = name;
+            voteCounts[index] = isNaN(votes) ? 0 : votes;
+            tapCounts[index] = isNaN(taps) ? 0 : taps;
+            
+            document.querySelectorAll('.name-input')[index].value = name;
+            updateDisplay(index);
+          }
+        });
+        updateChart();
+        saveData();
+      };
+      
+      reader.readAsText(file, 'UTF-8');
+    }
+  </script>
+</body>
+</html>
